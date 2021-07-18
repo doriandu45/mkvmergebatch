@@ -382,7 +382,7 @@ function swapLines() {
 declare -i fileNb=0
 
 # Loops through each numbered folders
-for folder in $(find . -type d -regex \.\\/[0-9]*)
+for folder in $(find . -type d -regex \.\\/[0-9]* | sort -n)
 do
 	trimmedFolder=$(echo $folder | cut -c 3-) # (cut -c 3-) return N instead of ./N
 	echo Parsing folder $trimmedFolder:
