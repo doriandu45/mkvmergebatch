@@ -233,8 +233,6 @@ function generateJson() {
 	# For each file in the template
 	for i in $(seq 0 $maxFile)
 	do
-		# If it's not the first file, we add the missing ,\name
-		[[ "$i" = "0" ]] || printf ',\n'
 		declare -a tracks=()
 		# We find the next file in the folder structure
 		while ! [[ -v files["$currentFile $1"] ]]
@@ -348,15 +346,18 @@ function generateJson() {
 		fi
 		
 		# File
-		printf '\t"'$currentFile'/'${files[$currentFile $1]}'"'
+		printf '\t"'$currentFile'/'${files[$currentFile $1]}'",\n'
 		
 		
 		currentFile=$currentFile+1
 		IFS=$nl
 	done
+	# Finally, we add the track order
+	printf '\t"--track-order",\n'
+	printf '\t"'$trackOrder'"\n'
 	
 	# And we clone the json array
-	printf "\n]"
+	printf "]"
 }
 
 
