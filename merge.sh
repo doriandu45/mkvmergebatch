@@ -9,6 +9,8 @@ declare -A files
 declare -a templates
 declare -A fileTemplateMap
 
+oldIFS="$IFS"
+
 # Color definition
 COLOR_CURRENT_LINE='\e[47;30m'
 COLOR_RESET='\e[0m'
@@ -389,6 +391,7 @@ do
 	folders+=($trimmedFolder)
 	
 	# Loops trough each file in $folder
+	IFS=$nl
 	for file in $(ls $folder)
 	do
 		echo \>Parsing file $file...
@@ -464,7 +467,6 @@ do
 	
 	found=false
 	#Since the IFS typically contains \n, it messes up when $currentTemplate is added to the array by removing all the \n.
-	oldIFS="$IFS"
 	IFS=""
 	
 	
@@ -486,7 +488,6 @@ do
 		lastIndex=$lastIndex+1
 	fi
 	
-	IFS="$oldIFS"
 done
 
 printFiles | column -ts "$(printf "\t")"
@@ -506,7 +507,6 @@ for t in "${!templates[@]}"
 do
 	declare -i pos=0
 	declare -a currentTemplate
-	oldIFS="$IFS"
 	IFS=$nl
 	# We put each line of $template in an array element. We use the IFS as \n to do that$
 	currentTemplate=(${templates[$t]})
@@ -753,10 +753,10 @@ for file in $(ls json)
 do
 	mkvmerge @"json/${file}"
 done
+
+
+
 IFS=$oldIFS
-
-
-
 unset jsons
 unset folders
 unset files
