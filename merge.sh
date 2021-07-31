@@ -425,13 +425,24 @@ do
 		found=false
 		json="$(mkvmerge -J $folder/$file)"
 		
-		if [[ ${file%.*} =~ ${DEFAULT_FILE_REGEX} ]]
+		regexFound=false
+		for regex in "${!DEFAULT_FILE_REGEX[@]}"
+		do
+			if [[ ${file%.*} =~ ${DEFAULT_FILE_REGEX[$regex]} ]]
+			then
+				
+				regex_match="${BASH_REMATCH[${DEFAULT_REGEX_MATCH_NB[$regex]}]}"
+				regexFound=true
+				break
+			fi
+		done
+		
+		if [[ "$regexFound" = "false" ]]
 		then
-			regex_match="${BASH_REMATCH[${DEFAULT_REGEX_MATCH_NB}]}"
-		else
 			echo "WARNING: No match found for this file!"
 			continue
 		fi
+		
 		
 		
 		for i in $(seq 0 $(($fileNb - 1)))
@@ -508,6 +519,9 @@ do
 	fi
 	
 done
+
+# ==============================================
+# Prints the templates and the file names
 
 printFiles | column -ts "$(printf "\t")"
 
