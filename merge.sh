@@ -49,6 +49,18 @@ TRACK_DISABLED=7
 nl="$(printf '\nq')"
 nl=${nl%q}
 
+# Loads the configuration from settings.sh if it exists
+if [[ -f "./settings.sh" ]]
+then
+	source ./settings.sh
+else
+	echo "WARNING: Config file not found. Using default values"
+	DEFAULT_FILE_REGEX='([0-9]+)'
+	DEFAULT_REGEX_MATCH_NB=2
+	DEFAULT_OUTPUT_NAME='${regex_match}'
+fi
+
+
 # printf the $1 exactly as the size $2. Used to display the columns
 function printfAsSize() {
 	cutText=$(cut -c -$2 <<<$1)
@@ -184,8 +196,9 @@ function printFiles() {
 	do
 		printf "$i\t"
 	done
-	printf "Template\n"
+	printf "Regex\tTemplate\n"
 	
+	IFS=$nl
 	# For each file
 	for i in $(seq 0 $(($fileNb - 1)))
 	do
@@ -200,8 +213,8 @@ function printFiles() {
 				printf "[none]\t"
 			fi
 		done
-		# Remove the trailing \t and print newline
-		printf "${fileTemplateMap[$i]}\n"
+		# Prints the end of the line
+		printf "${files[regex $i]}\t${fileTemplateMap[$i]}\n"
 	done
 }
 
@@ -211,7 +224,11 @@ function generateJson() {
 	printf "[\n"
 	# Output file
 	printf '\t"-o",\n'
-	printf '\t"out/'$1'.mkv",\n'
+	# To set the output file name, we set ${regex_match} and ${file_id}
+	regex_match="${files[regex $file]}"
+	file_id="$file"
+	
+	printf '\t"out/'$(eval "echo $DEFAULT_OUTPUT_NAME")'.mkv",\n'
 	
 	# Remove disabled tracks
 	IFS=";"
@@ -408,21 +425,24 @@ do
 		found=false
 		json="$(mkvmerge -J $folder/$file)"
 		
-		for i in "${folders[@]}"
+		if [[ ${file%.*} =~ ${DEFAULT_FILE_REGEX} ]]
+		then
+			regex_match="${BASH_REMATCH[${DEFAULT_REGEX_MATCH_NB}]}"
+		else
+			echo "WARNING: No match found for this file!"
+			continue
+		fi
+		
+		
+		for i in $(seq 0 $(($fileNb - 1)))
 		do
-			for j in $(seq 0 $(($fileNb - 1)))
-			do
-				# If the file don't exist at the id $i $j, we skip it
-				[[ -v files["$i $j"] ]] || continue;
-				fileToTest=${files[$i $j]}
-				if [[ "${fileToTest%.*}" = "${file%.*}" ]]
-				then
-					found=true
-					files["$trimmedFolder $j"]="$file"
-					jsons["$trimmedFolder $j"]="$json"
-					break
-				fi
-			done
+			if [[ "${files[regex $i]}" = "$regex_match" ]]
+			then
+				found=true
+				files["$trimmedFolder $i"]="$file"
+				jsons["$trimmedFolder $i"]="$json"
+				break
+			fi
 			[[ "$found" = true ]] && break;
 		done
 		
@@ -431,13 +451,12 @@ do
 		if [[ "$found" = false ]]
 		then
 			files["$trimmedFolder $fileNb"]="$file"
+			files["regex $fileNb"]="$regex_match"
 			jsons["$trimmedFolder $fileNb"]="$json"
 			fileNb=$fileNb+1
 		fi
-		
 	done
 done
-
 
 
 
