@@ -367,6 +367,27 @@ function generateJson() {
 		# File
 		printf '\t"'$currentFile'/'${files[$currentFile $1]}'",\n'
 		
+		# Extra attachments in the "attachments" folder
+		IFS=$nl
+		if [[ -d "attachments" ]]
+		then
+			for attach in $(ls "attachments")
+			do
+				extension=$(echo "${attach##*.}" | awk '{print tolower($0)}')
+				if [[ -v MIME_OVERRIDES["$extension"] ]]
+				then
+					mime="${MIME_OVERRIDES[$extension]}"
+				else
+					mime="$(file --mime-type -b "attachments/$attach")"
+				fi
+				printf '\t"--attachment-name",\n'
+				printf '\t"'$attach'",\n'
+				printf '\t"--attachment-mime-type",\n'
+				printf '\t"'$mime'",\n'
+				printf '\t"--attach-file",\n'
+				printf '\t"attachments/'$attach'",\n'
+			done
+		fi
 		
 		currentFile=$currentFile+1
 		IFS=$nl

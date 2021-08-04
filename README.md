@@ -14,15 +14,18 @@ In the same folder as the script, put you files in numbered folders like this:
 ```
 merge.sh
 1
-|-> file1.mkv
+|-> Awsome series S01E01.mkv
 \-> file2.mkv
 2
-\-> file1.mka
+\-> Episode 01.mka
 3
-|-> file1.ass
+|-> [SuperFansub] Awsome series EP01.ass
 \-> file2.srt
+attachments
+\-> some_font.ttf
 ```
-For the same output file, the input files must have the same name as shown above (as least for now)
+For the same output file, the input files must have the same episode number or the same name (see settings.sh for the regexes)
+If you want to add attachments like fonts, put them in the "attachments" folder
 When you're done, simply run the script in its folder. It will parse all the files, then display the CLI-like MKVToolNix. The keybinds are shown at the bottom. The layout you set in the script will be applied to all the files having the same layout at the beginning
 The column labelled "T" shows the type of the track (A for Audio, V for video, S for subtitles)
 The column labelled "D" shows if the track is set to default (D) and/or is forced (F)
@@ -32,11 +35,11 @@ The column labelled "D" shows if the track is set to default (D) and/or is force
 
 - [ ] Clean the code
 - [ ] Make sure that all variables are unset properly
-- [ ] Be able to add fonts that aren't in any of the input files (with the `--attach-file` parameter) by puting them in a "font" folder
+- [X] Be able to add fonts that aren't in any of the input files (with the `--attach-file` parameter) by puting them in a "font" folder
 - [ ] Manage chapters and tags that are already in the input files
 - [ ] Ba able to add external chapters as .xml by putting them in a "chapters" folder
 - [ ] Same thing with tags (?)
-- [ ] Be able to use different names for input files, and still recognize them (for example "Episode 1.mkv" and "[Series name]_EP1.mkv" should be treated as the same file)
+- [X] Be able to use different names for input files, and still recognize them (for example "Episode 1.mkv" and "[Series name]_EP1.mkv" should be treated as the same file)
 - [ ] Add support for advanced properties like "commentary track" and so on
 - [ ] Proper documentation
 
