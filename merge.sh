@@ -55,8 +55,8 @@ then
 	source ./settings.sh
 else
 	echo "WARNING: Config file not found. Using default values"
-	DEFAULT_FILE_REGEX='([0-9]+)'
-	DEFAULT_REGEX_MATCH_NB=2
+	DEFAULT_FILE_REGEX=('([sS][0-9][0-9][eE])([0-9][0-9])' '([0-9][0-9])')
+	DEFAULT_REGEX_MATCH_NB=(2 1)
 	DEFAULT_OUTPUT_NAME='${regex_match}'
 fi
 
@@ -439,8 +439,7 @@ do
 		
 		if [[ "$regexFound" = "false" ]]
 		then
-			echo "WARNING: No match found for this file!"
-			continue
+			regex_match="${file%.*}"
 		fi
 		
 		

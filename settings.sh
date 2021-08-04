@@ -4,7 +4,7 @@
 # The regex is parsed trough bash built-in regex
 # Input files will be matched to the same output file if the matching part of the regex is the same
 # The regex will only be processed on the filename (without its extension) and not on the full path of the file
-# IMPORTANT: Your regex MUST match something
+# If no regex matches, the whole filename will be used
 
 # To match 2 numbers, you can use '([0-9][0-9])'
 # To match a typical "SXXEXX" style like "S01E02", you can use '([sS][0-9][0-9][eE])([0-9][0-9])'
