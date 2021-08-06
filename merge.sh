@@ -219,6 +219,7 @@ function printFiles() {
 }
 
 # Generate the json for mkvmerge. The file number $1 must be specified
+# The $trackOrder must also be set
 # WARNING: This will permanently edit the template, by sorting it and removing disabled tracks
 function generateJson() {
 	printf "[\n"
@@ -270,6 +271,8 @@ function generateJson() {
 		videoTracks=""
 		audioTracks=""
 		subsTracks=""
+		copyChapters="false"
+		copyAttachments="false"
 		
 		IFS=$nl
 		for track in "${tracks[@]}"
@@ -300,7 +303,38 @@ function generateJson() {
 					[[ "$subsTracks" = "" ]] || subsTracks="${subsTracks},"
 					subsTracks="${subsTracks}${currentID}"
 				;;
+				"Ch.")
+					copyChapters="true"
+				;;
+				"At.")
+					copyAttachments="true"
+				;;
 			esac
+			
+			# Special "tracks"
+			# TODO: Special case to copy only specific attachments from a file
+			if [[ "$currentType" = "Ch." ]]
+			then
+				# Chapter language
+				if ! [[ "$currentLang" = "" ]]
+				then
+					printf '\t"--chapter-language",\n'
+					printf '\t"'$currentLang'",\n'
+				fi
+				# Chapter shift if needed
+				if ! [[ "$currentShift" = "" ]]
+				then
+					printf '\t"--chapter-sync",\n'
+					printf '\t"'$currentShift'",\n'
+				fi
+				continue # We don't want to follow the classical tracks process
+			fi
+			if [[ "$currentType" = "At." ]]
+			then
+				# Well, we don't have anything to do here... Yet (see TODO above)
+				continue # We don't want to follow the classical tracks process
+			fi
+			
 			
 			# Default and forced track
 			defaultStatus=$(cut -c -1 <<<$currentDefault)
@@ -362,6 +396,16 @@ function generateJson() {
 		else
 			printf '\t"--subtitle-tracks",\n'
 			printf '\t"'$subsTracks'",\n'
+		fi
+		
+		# Special "Tracks"
+		if [[ "$copyChapters" = "false" ]]
+		then
+			printf '\t"--no-chapters",\n'
+		fi
+		if [[ "$copyAttachments" = "false" ]]
+		then
+			printf '\t"--no-attachments",\n'
 		fi
 		
 		# File
@@ -509,6 +553,20 @@ do
 		[[ -v files["$folder $file"] ]] || continue;
 		currentTemplate+=$(echo ${jsons[$folder $file]} | jq -r '.tracks | map( "'$fileID':" + (.id | tostring) + ";" + (if .type == "video" then "(V)" elif .type == "audio" then "(A)" elif .type == "subtitles" then "(S)" else "(?)" end)+ ";" + (if .properties.default_track == true then "D" else "-" end) + (if .properties.forced_track == true then "D" else "-" end) + ";"+ .properties.language + ";" + .codec + ";" + .properties.track_name +";;") | join("\n") ')
 		currentTemplate+=$nl
+		# Add chapters if they exists
+		fileChapters=$(echo ${jsons[$folder $file]} | jq -r '.chapters | map (.num_entries | tostring) | join("\n")')
+		if [[ ! "$fileChapters" = "" ]]
+		then
+			currentTemplate+="${fileID}:C;Ch.;--;;Chapters;${fileChapters} chapter(s);;"
+			currentTemplate+=$nl
+		fi
+		# Same thing with attachments
+		fileAttach=$(echo ${jsons[$folder $file]} | jq -r '.attachments | length')
+		if [[ ! "$fileAttach" = "0" ]]
+		then
+			currentTemplate+="${fileID}:A;At.;--;;Attachments;${fileAttach} attachment(s);;"
+			currentTemplate+=$nl
+		fi
 		fileID=$fileID+1
 	done
 	currentTemplate=${currentTemplate%$nl} # Remove the trailing \n
@@ -669,66 +727,91 @@ do
 				fi
 			;;
 			'd' | 'D') # Change track default
-				defaultStatus=$(cut -c -1 <<<$currentDefault)
-				forcedStatus=$(cut -c 2- <<<$currentDefault)
-				if [[ "$defaultStatus" = "D" ]]
+				if [[ "$currentType" = "Ch."  || "$currentType" = "At." ]]
 				then
-					currentDefault="-$forcedStatus"
+					printf "${COLOR_ERROR}Chapters or attachments can't have a default value!${COLOR_RESET}"
 				else
-					currentDefault="D$forcedStatus"
+					defaultStatus=$(cut -c -1 <<<$currentDefault)
+					forcedStatus=$(cut -c 2- <<<$currentDefault)
+					if [[ "$defaultStatus" = "D" ]]
+					then
+						currentDefault="-$forcedStatus"
+					else
+						currentDefault="D$forcedStatus"
+					fi
+					mustRegenerateLine=true
 				fi
-				mustRegenerateLine=true
 			;;
 			'f' | 'F') # Change track forced
-				defaultStatus=$(cut -c -1 <<<$currentDefault)
-				forcedStatus=$(cut -c 2- <<<$currentDefault)
-				if [[ "$forcedStatus" = "F" ]]
+				if [[ "$currentType" = "Ch."  || "$currentType" = "At." ]]
 				then
-					currentDefault="${defaultStatus}-"
+					printf "${COLOR_ERROR}Chapters or attachments can't have a forced value!${COLOR_RESET}"
 				else
-					currentDefault="${defaultStatus}F"
+					defaultStatus=$(cut -c -1 <<<$currentDefault)
+					forcedStatus=$(cut -c 2- <<<$currentDefault)
+					if [[ "$forcedStatus" = "F" ]]
+					then
+						currentDefault="${defaultStatus}-"
+					else
+						currentDefault="${defaultStatus}F"
+					fi
+					mustRegenerateLine=true
 				fi
-				mustRegenerateLine=true
 			;;
 			'l' | 'L') # Change track language
-				stty echo
-				read -e -p "Enter the new track language: " -i "$currentLang" currentLang
-				# Remove the prompt
-				printf "\e[1A\e[0G\e[2K"
-				mustRegenerateLine=true
+				if [[ "$currentType" = "At." ]]
+				then
+					printf "${COLOR_ERROR}Attachments can't have a language!${COLOR_RESET}"
+				else
+					stty echo
+					read -e -p "Enter the new track language: " -i "$currentLang" currentLang
+					# Remove the prompt
+					printf "\e[1A\e[0G\e[2K"
+					mustRegenerateLine=true
+				fi
 			;;
 			'n' | 'N') # Change track name
-				stty echo
-				read -e -p "Enter the new track name: " -i "$currentName" currentName
-				# Remove the prompt
-				printf "\e[1A\e[0G\e[2K"
-				mustRegenerateLine=true
+				if [[ "$currentType" = "Ch."  || "$currentType" = "At." ]]
+				then
+					printf "${COLOR_ERROR}Chapters or attachments can't have a name!${COLOR_RESET}"
+				else
+					stty echo
+					read -e -p "Enter the new track name: " -i "$currentName" currentName
+					# Remove the prompt
+					printf "\e[1A\e[0G\e[2K"
+					mustRegenerateLine=true
+				fi
 			;;
 			's' | 'S') # Change track shift
-				stty echo
-				while :
-				do
-					printf "\e[2K"
-					read -e -p "Enter the new shift in ms: " -i "$currentShift" newShift
-					printf "\e[2K"
-					# If the filed is empty
-					if [ -z "$newShift"  ]
-					then
-						currentShift=""
-						break
-					fi
-					# Else, we check that it is a correct integer https://stackoverflow.com/a/19116862
-					if [ "$newShift" -eq "$newShift" ] 2>/dev/null
-					then
-						currentShift=$newShift
-						break
-					else
-						printf "${COLOR_ERROR}Please input a correct integer!${COLOR_RESET}\e[1A\e[0G"
-					fi
-				done
-				# Remove the prompt
-				printf "\e[1A\e[0G\e[2K"
-				mustRegenerateLine=true
+				if [[ "$currentType" = "At." ]]
+				then
+					printf "${COLOR_ERROR}Attachments can't have a shift value!${COLOR_RESET}"
+				else
+					stty echo
+					while :
+					do
+						printf "\e[2K"
+						read -e -p "Enter the new shift in ms: " -i "$currentShift" newShift
+						printf "\e[2K"
+						# If the filed is empty
+						if [ -z "$newShift"  ]
+						then
+							currentShift=""
+							break
+						fi
+						# Else, we check that it is a correct integer https://stackoverflow.com/a/19116862
+						if [ "$newShift" -eq "$newShift" ] 2>/dev/null
+						then
+							currentShift=$newShift
+							break
+						else
+							printf "${COLOR_ERROR}Please input a correct integer!${COLOR_RESET}\e[1A\e[0G"
+						fi
+					done
+					# Remove the prompt
+					printf "\e[1A\e[0G\e[2K"
+					mustRegenerateLine=true
+				fi
 			;;
 			" ") #SPACE
 				if [[ "$currentDisabled" = "D" ]]
@@ -773,7 +856,11 @@ do
 		IFS=";"
 		declare -a currentLine
 		currentLine=(${currentTemplate[$i]})
+		# Skip disabled tracks
 		[[ "${currentLine[$TRACK_DISABLED]}" = "D" ]] && continue
+		# Skip "special tracks" that aren't true tracks like chapters and attachments
+		[[ "${currentLine[$TRACK_TYPE]}" = "Ch." ]] && continue
+		[[ "${currentLine[$TRACK_TYPE]}" = "At." ]] && continue
 		if [[ "$trackOrder" = "" ]]
 		then
 			trackOrder="${currentLine[$TRACK_ID]}"
