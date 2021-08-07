@@ -257,7 +257,6 @@ function generateJson() {
 	# Remove disabled tracks
 	for i in "${!currentTemplate[@]}"
 	do
-		declare -a currentLine
 		parseLine "${currentTemplate[$i]}"
 		[[ "$currentDisabled" = "D" ]] && unset currentTemplate[$i]
 	done
@@ -1017,11 +1016,6 @@ do
 					currentDisabled="D"
 				fi
 				mustRegenerateLine=true
-			;;
-			"!")
-				multiValueInput "I am a prompt: " "string" "someValue"
-				echo "$someValue"
-				exit
 			;;
 			"") # RETURN
 				break
