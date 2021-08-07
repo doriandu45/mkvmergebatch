@@ -17,6 +17,7 @@ COLOR_RESET='\e[0m'
 COLOR_ERROR='\e[41;37;1m\a'
 COLOR_DISABLED_NON_CURRENT='\e[90m'
 COLOR_DISABLED_CURRENT='\e[100;37m'
+COLOR_HINT='\e[38;5;99m'
 
 # Column sizes used for the display
 # Because we print each line one by one, for now I will use fixed lengths. Maybe one day I'll implement dynamic sizing
@@ -33,21 +34,32 @@ COLUMN_SEPARATOR="|"
 HEADER_SEPARATOR="-"
 COLUMN_HEADER_INTERSECTION="+"
 
-# Indices constants used for the templates
-TRACK_ID=0
-TRACK_TYPE=1
-TRACK_DEFAULT=2
-TRACK_LANG=3
-TRACK_CODEC=4
-TRACK_NAME=5
-TRACK_SHIFT=6
-TRACK_DISABLED=7
-
 
 # Newline constant used to add '\n' to strings
 # See https://stackoverflow.com/a/64938613
 nl="$(printf '\nq')"
 nl=${nl%q}
+
+# Parse a template line ($1) into separate variables using read
+# In the past, I used an array like array=($line) with the IFS set at ';' however, that messed up with certain characters like '*'
+function parseLine() {
+	IFS=";"
+	read currentID currentType currentDefault currentLang currentCodec currentName currentShift currentDisabled<<<$1
+}
+
+# If a "multi value" is used (different value for different files), the variable $1 is in the form of "*( [file]=value ...)"
+# Here, if $1 begins with '*', we want to extract the right value from the file $2
+function parseMVal() {
+	eval "mValLine=\$$1"
+	# Checks if $1 begins with '*'
+	[[ "$(cut -c -1 <<<$mValLine)" != "*" ]] && return
+	declare -A mValArray
+	IFS=" "
+	eval "mValArray=$(cut -c 2- <<<$mValLine)"
+	mValLine="${mValArray[$2]}"
+	eval "$1=\$mValLine"
+	
+}
 
 # Loads the configuration from settings.sh if it exists
 if [[ -f "./settings.sh" ]]
@@ -73,6 +85,18 @@ function printfAsSize() {
 	printf "%-${n}s" "$cutText"
 }
 
+# calls pintfAsSize but checks ifor the sepcial case of multiple values (begins with '*') and don't display the technical data
+# Takes the same parameters as printfAsSize
+function checkAndPrintfAsSize() {
+	cutText=$(cut -c -1 <<<$1)
+	if [[ "$cutText" = "*" ]]
+	then
+		printfAsSize "*" "$2"
+	else
+		printfAsSize "$1" "$2"
+	fi
+}
+
 # printf the same pattern ($1) N ($2) times. Used to display the line below the header
 function nprintf() {
 	for n in $(seq $2)
@@ -84,37 +108,36 @@ function nprintf() {
 # Prints a line ($1) of the screen. $2 sets if the line is selected or not
 function printLine() {
 	# We parse the current line with the IFS as ; for printing
-	IFS=";"
-	currentLine=(${currentTemplate[$1]})
+	parseLine "${currentTemplate[$1]}"
 	
 	if [[ "$2" = true ]]
 	then
-		if [[ "${currentLine[TRACK_DISABLED]}" = "D" ]]
+		if [[ "$currentDisabled" = "D" ]]
 		then
 			printf "$COLOR_DISABLED_CURRENT"
 		else
 			printf "$COLOR_CURRENT_LINE"
 		fi
 	else
-		if [[ "${currentLine[TRACK_DISABLED]}" = "D" ]]
+		if [[ "$currentDisabled" = "D" ]]
 		then
 			printf "$COLOR_DISABLED_NON_CURRENT"
 		fi
 	fi
 	
-	printfAsSize "${currentLine[$TRACK_ID]}" "$SIZE_ID"
+	printfAsSize "$currentID" "$SIZE_ID"
 	printf "$COLUMN_SEPARATOR"
-	printfAsSize "${currentLine[$TRACK_TYPE]}" "$SIZE_TYPE"
+	printfAsSize "$currentType" "$SIZE_TYPE"
 	printf "$COLUMN_SEPARATOR"
-	printfAsSize "${currentLine[$TRACK_DEFAULT]}" "$SIZE_DEFAULT"
+	printfAsSize "$currentDefault" "$SIZE_DEFAULT"
 	printf "$COLUMN_SEPARATOR"
-	printfAsSize "${currentLine[$TRACK_LANG]}" "$SIZE_LANG"
+	checkAndPrintfAsSize "$currentLang" "$SIZE_LANG"
 	printf "$COLUMN_SEPARATOR"
-	printfAsSize "${currentLine[$TRACK_CODEC]}" "$SIZE_CODEC"
+	printfAsSize "$currentCodec" "$SIZE_CODEC"
 	printf "$COLUMN_SEPARATOR"
-	printfAsSize "${currentLine[$TRACK_NAME]}" "$SIZE_NAME"
+	checkAndPrintfAsSize "$currentName" "$SIZE_NAME"
 	printf "$COLUMN_SEPARATOR"
-	printfAsSize "${currentLine[$TRACK_SHIFT]}" "$SIZE_SHIFT"
+	checkAndPrintfAsSize "$currentShift" "$SIZE_SHIFT"
 	printf "$COLOR_RESET\n"
 }
 
@@ -232,12 +255,11 @@ function generateJson() {
 	printf '\t"out/'$(eval "echo $DEFAULT_OUTPUT_NAME")'.mkv",\n'
 	
 	# Remove disabled tracks
-	IFS=";"
 	for i in "${!currentTemplate[@]}"
 	do
 		declare -a currentLine
-		currentLine=(${currentTemplate[$i]})
-		[[ "${currentLine[$TRACK_DISABLED]}" = "D" ]] && unset currentTemplate[$i]
+		parseLine "${currentTemplate[$i]}"
+		[[ "$currentDisabled" = "D" ]] && unset currentTemplate[$i]
 	done
 	# Sort the template so each file is in order
 	IFS=$nl
@@ -277,18 +299,13 @@ function generateJson() {
 		IFS=$nl
 		for track in "${tracks[@]}"
 		do
-			IFS=";"
-			declare -a currentLine
-			currentLine=(${track})
-			currentID="${currentLine[$TRACK_ID]}"
+			parseLine "${track}"
 			currentID=$(cut -d: -f2<<<${currentID})
-			currentType="${currentLine[$TRACK_TYPE]}"
-			currentDefault="${currentLine[$TRACK_DEFAULT]}"
-			currentLang="${currentLine[$TRACK_LANG]}"
-			currentCodec="${currentLine[$TRACK_CODEC]}"
-			currentName="${currentLine[$TRACK_NAME]}"
-			currentShift="${currentLine[$TRACK_SHIFT]}"
-			currentDisabled="${currentLine[$TRACK_DISABLED]}"
+			currentFilepath="$currentFile/${files[$currentFile $1]}"
+			# Apply the right "multi value" if needed
+			parseMVal "currentLang" "$currentFilepath"
+			parseMVal "currentName" "$currentFilepath"
+			parseMVal "currentShift" "$currentFilepath"
 			
 			case "$currentType" in
 				"(V)")
@@ -409,7 +426,7 @@ function generateJson() {
 		fi
 		
 		# File
-		printf '\t"'$currentFile'/'${files[$currentFile $1]}'",\n'
+		printf '\t"'$currentFilepath'",\n'
 		
 		# Extra attachments in the "attachments" folder
 		IFS=$nl
@@ -459,6 +476,224 @@ function swapLines() {
 	screenLinesUnselected[$2]="${screenLinesUnselected[$1]}"
 	screenLinesUnselected[$1]="$swapedLine"
 }
+
+# Handle settings imput
+# $1: prompt
+# $2: type ("string" or "integer")
+# $3: variable to set
+# $4: enable multiple values (defaults to true)
+function valueInput() {
+	errorPrinted="false"
+	stty echo
+	while :
+	do
+		printf "\e[2K"
+		# If no error is printed and multiple values are enabled, print the hint below
+		if [[ "$4" != "false" ]] && [[ "$errorPrinted" = "false" ]]
+		then
+			printf '\n'
+			printf "${COLOR_HINT}You can use \'*\' to set different values for different files${COLOR_RESET}"
+			# Go one line up
+			printf '\e[1A\e[0G'
+		fi
+		
+		eval 'read -e -p "'$1'" -i "$'$3'" newvalue'
+		errorPrinted="false"
+		
+		
+		# If the input is "*", we enter multi values mode if enabled
+		if [[ "$4" != "false" ]] && [[ "$newvalue" = "*" ]]
+		then
+			multiValueInput "$1" "$2" "newvalue" "false"
+			break
+		fi
+		
+		# If we want a string, we break immediatly to skip integer check
+		[[ "$2" = "string" ]] && break
+		
+		# If the filed is empty
+		if [ -z "$newvalue"  ]
+		then
+			newvalue=""
+			break
+		fi
+		# Else, we check that it is a correct integer https://stackoverflow.com/a/19116862
+		if [ "$newvalue" -eq "$newvalue" ] 2>/dev/null
+		then
+			break
+		else
+			printf "\e[2K${COLOR_ERROR}Please input a correct integer!${COLOR_RESET}\e[1A\e[0G"
+			errorPrinted="true"
+		fi
+	done
+	printf "\e[2K\e[1A\e[2K"
+	eval "$3=\$newvalue"
+}
+
+# Handle different inputs for different files
+# $1: prompt
+# $2: type (see above)
+# $3: variable to set
+# $t (must be set): current template
+function multiValueInput() {
+	# Get the file ID from the selectd track
+	currentFID=$(cut -d: -f1<<<${currentID})
+	
+	declare -a mValFilename
+	declare -a mValIds
+	declare -a mValIsSelected
+	declare -a mValValues
+	declare -i mValFilesNb=0
+	
+	# Look for all the files
+	IFS=$nl
+	for file in $(seq 0 $(($fileNb - 1)))
+	do
+		# If the file don't belong to this template, we skip it
+		[[ "${fileTemplateMap[$file]}" = "$t" ]] || continue
+		# Now we look for the Nth folder containing the file, with N being the FID
+		declare -i filesFound=-1
+		declare -i iFolder=0
+		while ! [[ "$filesFound" = "$currentFID" ]]
+		do
+			if [[ -v files["$iFolder $file"] ]]
+			then
+				filesFound=$filesFound+1
+			fi
+			[[ "$filesFound" = "$currentFID" ]] && break
+			iFolder=$iFolder+1
+		done
+		mValFilename+=("$iFolder/${files[$iFolder $file]}")
+		mValIds+=("$file")
+		mValIsSelected+=("false")
+		mValFilesNb=$mValFilesNb+1
+		mValValues+=("")
+	done
+	
+	declare -i mValPos=0
+	
+	
+	# Interface loop
+	while :
+	do
+		stty -echo
+		printf '\e[?25l'
+		declare -i mValPrintedLines=0
+		# Print all files
+		for mValI in "${!mValFilename[@]}"
+		do
+			printf "\e[2K"
+			[[ "$mValPos" = "$mValI" ]] && printf "$COLOR_CURRENT_LINE"
+			if [[ "${mValIsSelected[$mValI]}" = "true" ]]
+			then
+				printf "> "
+			else
+				printf "  "
+			fi
+			printf "${mValFilename[$mValI]}: ${mValValues[$mValI]} ${COLOR_RESET}\n"
+			mValPrintedLines=$mValPrintedLines+1
+		done
+		
+		printf "\n"
+		echo "UP/DOWN: Highlight file"
+		echo "SPACE: select/unselect file for bulk editing"
+		echo "E: edit values for all selected files (if any) or the current highlited file if none are selected"
+		echo "A: select all files"
+		echo "U: unselect all files"
+		echo "RETURN: Apply values"
+		mValPrintedLines=$mValPrintedLines+7
+		
+		
+		# Flush keyboard buffer
+		while read -t 0.01; do :; done
+		# https://stackoverflow.com/a/46481173
+		read -rsn1 mode
+		if [[ $mode == $(printf "\u1b") ]]
+		then
+			read -rsn2 mode # read 2 more chars
+		fi
+		printf "\e[K"
+		case $mode in
+			'[A') # UP
+				mValPos=$mValPos-1
+				[ "$mValPos" = "-1" ] && mValPos=${mValFilesNb}-1
+			;;
+			'[B') # DOWN
+				mValPos=$mValPos+1
+				[ "$mValPos" = "$mValFilesNb" ] && mValPos=0
+			;;
+			'e' | 'E') # Change value
+				valueInput "$1" "$2" "mValNewVal" "false"
+				mValHasSelection="false"
+				for mValI in "${!mValIsSelected[@]}"
+				do
+					if [[ "${mValIsSelected[$mValI]}" = "true" ]]
+					then
+						mValHasSelection="true"
+						mValValues[$mValI]="$mValNewVal"
+						mValIsSelected[$mValI]="false" # After changing, we unselect since the selection is not needed anymore
+					fi
+				done
+				# If no file have bee selected
+				[[ "$mValHasSelection" = "false" ]] && mValValues[$mValPos]="$mValNewVal"
+			;;
+			'a' | 'A') # Select all
+				for mValI in "${!mValIsSelected[@]}"
+				do
+					mValIsSelected[$mValI]="true"
+				done
+			;;
+			'u' | 'U') # Unselect all
+				for mValI in "${!mValIsSelected[@]}"
+				do
+					mValIsSelected[$mValI]="false"
+				done
+			;;
+			" ") #SPACE
+				if [[ "${mValIsSelected[$mValPos]}" = "true" ]]
+				then
+					mValIsSelected[$mValPos]="false"
+				else
+					mValIsSelected[$mValPos]="true"
+				fi
+			;;
+			"") # RETURN
+				break
+			;;
+		esac
+		# Go up top
+		printf "\e[${mValPrintedLines}A\e[0G"
+		
+	done
+	
+	# Now, set the variable
+	mValFinalValue="*( "
+	for mValI in "${!mValFilename[@]}"
+	do
+		mValFinalValue="$mValFinalValue [\"${mValFilename[mValI]}\"]=\"${mValValues[mValI]}\""
+	done
+	mValFinalValue="$mValFinalValue )"
+	
+	eval "$3=\$mValFinalValue"
+	
+	# Remove all the mess in the console
+	nprintf "\e[2K\e[1A" $mValPrintedLines
+	# Since a lot of files could be printed, it is preferable to redraw the main interface
+	mustRedraw=true
+	
+	unset mValFinalValue
+	unset mValFilename
+	unset mValIds
+	unset mValPos
+	unset mValFilesNb
+	unset mValI
+	unset mValIsSelected
+	unset mValPrintedLines
+	unset mValValues
+	unset mValNewVal
+	unset mValHasSelection
+}
+
 
 # ==============================================
 # Loads file information
@@ -532,6 +767,7 @@ do
 		fi
 	done
 done
+
 
 
 
@@ -643,7 +879,6 @@ do
 	do
 		# We print the template
 		IFS=$nl
-		declare -a currentLine
 		
 		# Disable keyboard echo and hide terminal cursor
 		stty -echo
@@ -671,18 +906,7 @@ do
 		printf '\e[?25h'
 		
 		# We parse the current line with the IFS as ; for editing the line
-		IFS=";"
-		declare -a currentLine
-		currentLine=(${currentTemplate[$pos]})
-
-		currentID="${currentLine[$TRACK_ID]}"
-		currentType="${currentLine[$TRACK_TYPE]}"
-		currentDefault="${currentLine[$TRACK_DEFAULT]}"
-		currentLang="${currentLine[$TRACK_LANG]}"
-		currentCodec="${currentLine[$TRACK_CODEC]}"
-		currentName="${currentLine[$TRACK_NAME]}"
-		currentShift="${currentLine[$TRACK_SHIFT]}"
-		currentDisabled="${currentLine[$TRACK_DISABLED]}"
+		parseLine "${currentTemplate[$pos]}"
 		
 		
 		# We process user input
@@ -763,10 +987,7 @@ do
 				then
 					printf "${COLOR_ERROR}Attachments can't have a language!${COLOR_RESET}"
 				else
-					stty echo
-					read -e -p "Enter the new track language: " -i "$currentLang" currentLang
-					# Remove the prompt
-					printf "\e[1A\e[0G\e[2K"
+					valueInput "Enter the new track language: " "string" "currentLang" 
 					mustRegenerateLine=true
 				fi
 			;;
@@ -775,10 +996,7 @@ do
 				then
 					printf "${COLOR_ERROR}Chapters or attachments can't have a name!${COLOR_RESET}"
 				else
-					stty echo
-					read -e -p "Enter the new track name: " -i "$currentName" currentName
-					# Remove the prompt
-					printf "\e[1A\e[0G\e[2K"
+					valueInput "Enter the new track name: " "string" "currentName" 
 					mustRegenerateLine=true
 				fi
 			;;
@@ -787,29 +1005,7 @@ do
 				then
 					printf "${COLOR_ERROR}Attachments can't have a shift value!${COLOR_RESET}"
 				else
-					stty echo
-					while :
-					do
-						printf "\e[2K"
-						read -e -p "Enter the new shift in ms: " -i "$currentShift" newShift
-						printf "\e[2K"
-						# If the filed is empty
-						if [ -z "$newShift"  ]
-						then
-							currentShift=""
-							break
-						fi
-						# Else, we check that it is a correct integer https://stackoverflow.com/a/19116862
-						if [ "$newShift" -eq "$newShift" ] 2>/dev/null
-						then
-							currentShift=$newShift
-							break
-						else
-							printf "${COLOR_ERROR}Please input a correct integer!${COLOR_RESET}\e[1A\e[0G"
-						fi
-					done
-					# Remove the prompt
-					printf "\e[1A\e[0G\e[2K"
+					valueInput "Enter the new track shift: " "integer" "currentShift" 
 					mustRegenerateLine=true
 				fi
 			;;
@@ -821,6 +1017,11 @@ do
 					currentDisabled="D"
 				fi
 				mustRegenerateLine=true
+			;;
+			"!")
+				multiValueInput "I am a prompt: " "string" "someValue"
+				echo "$someValue"
+				exit
 			;;
 			"") # RETURN
 				break
@@ -836,8 +1037,12 @@ do
 		fi
 		if [[ "$mustRedraw" = true ]]
 		then
-			screenLinesUnselected=($(printAllLines false))
-			screenLinesSelected=($(printAllLines true))
+			# Go up (header +array + footer size) lines
+			printf "\e[${headerSize}A\e[${arraySize}A\e[${footerSize}A\e[0G"
+			printHeader
+			# Go down (tracks number) lines to print the footer
+			nprintf "\n" ${arraySize}
+			printFooter
 		fi
 		
 		
@@ -853,19 +1058,17 @@ do
 	trackOrder=""
 	for i in "${!currentTemplate[@]}"
 	do
-		IFS=";"
-		declare -a currentLine
-		currentLine=(${currentTemplate[$i]})
+		parseLine "${currentTemplate[$i]}"
 		# Skip disabled tracks
-		[[ "${currentLine[$TRACK_DISABLED]}" = "D" ]] && continue
+		[[ "$currentDisabled" = "D" ]] && continue
 		# Skip "special tracks" that aren't true tracks like chapters and attachments
-		[[ "${currentLine[$TRACK_TYPE]}" = "Ch." ]] && continue
-		[[ "${currentLine[$TRACK_TYPE]}" = "At." ]] && continue
+		[[ "$currentType" = "Ch." ]] && continue
+		[[ "$currentType" = "At." ]] && continue
 		if [[ "$trackOrder" = "" ]]
 		then
-			trackOrder="${currentLine[$TRACK_ID]}"
+			trackOrder="$currentID"
 		else
-			trackOrder="${trackOrder},${currentLine[$TRACK_ID]}"
+			trackOrder="${trackOrder},${currentID}"
 		fi
 	done
 	 
