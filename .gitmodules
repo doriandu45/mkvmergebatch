@@ -1,0 +1,3 @@
+[submodule "mkvfontman"]
+	path = mkvfontman
+	url = git@github.com:doriandu45/mkvfontman.git
