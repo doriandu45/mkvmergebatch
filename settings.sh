@@ -8,7 +8,7 @@
 
 # To match 2 numbers, you can use '([0-9][0-9])'
 # To match a typical "SXXEXX" style like "S01E02", you can use '([sS][0-9][0-9][eE])([0-9][0-9])'
-DEFAULT_FILE_REGEX=('([sS][0-9][0-9][eE])([0-9][0-9])' '([^0-9])([0-9][0-9])([^0-9])' '([0-9][0-9])')
+DEFAULT_FILE_REGEX=('([sS][0-9][0-9].*[eE])([0-9][0-9])' '([^0-9])([0-9][0-9])([^0-9])' '([0-9][0-9])')
 
 # The matching group to use
 # 1 is the first matching group
@@ -26,3 +26,6 @@ DEFAULT_OUTPUT_NAME='${regex_match}_output'
 # IMPORTANT: Extension must be in lowercase. When the files are being tested, all extensions are converted in lowercase
 declare -A MIME_OVERRIDES
 MIME_OVERRIDES=(["ttf"]="application/x-truetype-font" ["otf"]="application/vnd.ms-opentype")
+
+# Path to lib.sh file from MKVFontMan (see: https://github.com/doriandu45/mkvfontman)
+MKVFONTMAN_LIB_FILE="mkvfontman/lib.sh"

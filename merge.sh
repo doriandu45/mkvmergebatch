@@ -40,6 +40,7 @@ COLUMN_HEADER_INTERSECTION="+"
 nl="$(printf '\nq')"
 nl=${nl%q}
 
+
 # Parse a template line ($1) into separate variables using read
 # In the past, I used an array like array=($line) with the IFS set at ';' however, that messed up with certain characters like '*'
 function parseLine() {
@@ -70,8 +71,17 @@ else
 	DEFAULT_FILE_REGEX=('([sS][0-9][0-9][eE])([0-9][0-9])' '([0-9][0-9])')
 	DEFAULT_REGEX_MATCH_NB=(2 1)
 	DEFAULT_OUTPUT_NAME='${regex_match}'
+	MKVFONTMAN_LIB_FILE="mkvfontman/lib.sh"
 fi
 
+# Loads the MKVFontMan lib if existing
+if [[ -f "%MKVFONTMAN_LIB_FILE" ]]
+then
+	source "%MKVFONTMAN_LIB_FILE"
+	MKVFONTMAN_LOADED=true
+else
+	MKVFONTMAN_LOADED=false
+fi
 
 # printf the $1 exactly as the size $2. Used to display the columns
 function printfAsSize() {
@@ -251,7 +261,7 @@ function generateJson() {
 	# To set the output file name, we set ${regex_match} and ${file_id}
 	regex_match="${files[regex $file]}"
 	file_id="$file"
-	
+
 	printf '\t"out/'$(eval "echo $DEFAULT_OUTPUT_NAME")'.mkv",\n'
 	
 	# Remove disabled tracks
@@ -849,14 +859,14 @@ echo "${#templates[@]} template(s) found"
 declare -i headerSize=$(wc -l <<<$(printHeader))
 declare -i footerSize=$(wc -l <<<$(printFooter))
 
+
 for t in "${!templates[@]}"
 do
 	declare -i pos=0
 	declare -a currentTemplate
 	IFS=$nl
-	# We put each line of $template in an array element. We use the IFS as \n to do that$
+	# We put each line of $template in an array element. We use the IFS as \n to do that
 	currentTemplate=(${templates[$t]})
-	
 	arraySize=${#currentTemplate[@]}
 	
 	declare -a screenLinesUnselected
@@ -1043,12 +1053,23 @@ do
 	done
 	stty echo
 	printf "\n"
+	IFS=""
 	
+	# A very hacky way to put back something with \n in an array in a single entry
+	templates[$t]="$(printf "%s\n" "${currentTemplate[@]}")"
 	
-	echo "Generating the jsons for mkvmerge"
-	
-	[[ -d "json" ]] || mkdir "json"
-	
+	unset pos
+	unset currentTemplate
+done
+
+echo "Generating the jsons for mkvmerge"
+[[ -d "json" ]] || mkdir "json"
+
+
+for t in "${!templates[@]}"
+do
+	IFS=$nl
+	currentTemplate=(${templates[$t]})
 	trackOrder=""
 	for i in "${!currentTemplate[@]}"
 	do
@@ -1075,13 +1096,6 @@ do
 		generateJson $file >"json/${file}.json"
 		
 	done
-	
-	echo "Done!"
-	
-	
-	printf "\n\n"
-	unset pos
-	unset currentTemplate
 done
 
 IFS=$nl
