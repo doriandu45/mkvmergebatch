@@ -14,6 +14,7 @@ oldIFS="$IFS"
 # Color definition
 COLOR_CURRENT_LINE='\e[47;30m'
 COLOR_RESET='\e[0m'
+COLOR_WARNING='\e[38;5;202m'
 COLOR_ERROR='\e[41;37;1m\a'
 COLOR_DISABLED_NON_CURRENT='\e[90m'
 COLOR_DISABLED_CURRENT='\e[100;37m'
@@ -75,9 +76,9 @@ else
 fi
 
 # Loads the MKVFontMan lib if existing
-if [[ -f "%MKVFONTMAN_LIB_FILE" ]]
+if [[ -f "$MKVFONTMAN_LIB_FILE" ]]
 then
-	source "%MKVFONTMAN_LIB_FILE"
+	source "$MKVFONTMAN_LIB_FILE"
 	MKVFONTMAN_LOADED=true
 else
 	MKVFONTMAN_LOADED=false
@@ -304,6 +305,7 @@ function generateJson() {
 		subsTracks=""
 		copyChapters="false"
 		copyAttachments="false"
+		declare -a missingFonts
 		
 		IFS=$nl
 		for track in "${tracks[@]}"
@@ -337,6 +339,13 @@ function generateJson() {
 				;;
 			esac
 			
+			# If we use MKVFontMan, we don't copy already existing attachments, we will add them later
+			if [[ "$MKVFONTMAN_LOADED" == "true" ]]
+			then
+				copyAttachments="false"
+			fi
+			
+			
 			# Special "tracks"
 			# TODO: Special case to copy only specific attachments from a file
 			if [[ "$currentType" = "Ch." ]]
@@ -368,36 +377,36 @@ function generateJson() {
 			printf '\t"--default-track",\n'
 			if [[ "$defaultStatus" = "D" ]]
 			then
-				printf '\t"'$currentID':true",\n'
+				printf '\t"'"$currentID"':true",\n'
 			else
-				printf '\t"'$currentID':false",\n'
+				printf '\t"'"$currentID"':false",\n'
 			fi
 			
 			printf '\t"--forced-track",\n'
 			if [[ "$forcedStatus" = "F" ]]
 			then
-				printf '\t"'$currentID':true",\n'
+				printf '\t"'"$currentID"':true",\n'
 			else
-				printf '\t"'$currentID':false",\n'
+				printf '\t"'"$currentID"':false",\n'
 			fi
 			
 			# Track language
 			if ! [[ "$currentLang" = "" ]]
 			then
 				printf '\t"--language",\n'
-				printf '\t"'$currentID':'$currentLang'",\n'
+				printf '\t"'"$currentID"':'"$currentLang"'",\n'
 			fi
 			# Track name
 			if ! [[ "$currentName" = "" ]]
 			then
 				printf '\t"--track-name",\n'
-				printf '\t"'$currentID':'$currentName'",\n'
+				printf '\t"'"$currentID"':'"$currentName"'",\n'
 			fi
 			# Track shift if needed
 			if ! [[ "$currentShift" = "" ]]
 			then
 				printf '\t"--sync",\n'
-				printf '\t"'$currentID':'$currentShift'",\n'
+				printf '\t"'"$currentID"':'"$currentShift"'",\n'
 			fi
 		done
 		
@@ -435,11 +444,11 @@ function generateJson() {
 		fi
 		
 		# File
-		printf '\t"'$currentFilepath'",\n'
+		printf '\t"'"$currentFilepath"'",\n'
 		
-		# Extra attachments in the "attachments" folder
+		# Extra attachments in the "attachments" folder (if not usink MKVFontMan)
 		IFS=$nl
-		if [[ -d "attachments" ]]
+		if [[ -d "attachments" ]] && [[ "$MKVFONTMAN_LOADED" == "false" ]]
 		then
 			for attach in $(ls "attachments")
 			do
@@ -451,17 +460,61 @@ function generateJson() {
 					mime="$(file --mime-type -b "attachments/$attach")"
 				fi
 				printf '\t"--attachment-name",\n'
-				printf '\t"'$attach'",\n'
+				printf '\t"'"$attach"'",\n'
 				printf '\t"--attachment-mime-type",\n'
-				printf '\t"'$mime'",\n'
+				printf '\t"'"$mime"'",\n'
 				printf '\t"--attach-file",\n'
-				printf '\t"attachments/'$attach'",\n'
+				printf '\t"attachments/'"$attach"'",\n'
 			done
+		fi
+		# Parse all subtitles to list needed fonts
+		if [[ "$MKVFONTMAN_LOADED" == "true" ]]
+		then
+			
+			case "${currentFilepath: -3}" in
+				"mkv" | "mks" | "mka")
+					json="${jsons[$currentFile $1]}"
+					missingFonts+=($(printUsedFontsMatroska "$currentFilepath"))
+				;;
+				"ass" | "ssa")
+					missingFonts+=("$(printFontsAss "$currentFilepath")")
+				;;
+			esac 2>/dev/null # Remove error messages when there are no subtitles in the file
 		fi
 		
 		currentFile=$currentFile+1
 		IFS=$nl
 	done
+	IFS="$nl"
+	if [[ "$MKVFONTMAN_LOADED" == "true" ]]
+	then
+		missingFonts=( $(printf '%s\n' "${missingFonts[@]}" | sort | uniq ) )
+		declare -a fontsToAdd
+		parseFontStore
+		if [[ "${!missingFonts[@]}" != "0" ]]
+		then
+			printf "$COLOR_WARNING">&2
+			echo "WARNING: The following fonts are missing: ${missingFonts[@]}">&2
+			printf "$COLOR_RESET">&2
+		fi
+		for attach in "${fontsToAdd[@]}"
+		do
+			extension=$(echo "${attach##*.}" | awk '{print tolower($0)}')
+			if [[ -v MIME_OVERRIDES["$extension"] ]]
+			then
+				mime="${MIME_OVERRIDES[$extension]}"
+			else
+				mime="$(file --mime-type -b "$FONTSTORE/$attach")"
+			fi
+			printf '\t"--attachment-name",\n'
+			printf '\t"'"$attach"'",\n'
+			printf '\t"--attachment-mime-type",\n'
+			printf '\t"'"$mime"'",\n'
+			printf '\t"--attach-file",\n'
+			printf '\t"'"$FONTSTORE"'/'"$attach"'",\n'
+		done
+	fi
+	
 	# Finally, we add the track order
 	printf '\t"--track-order",\n'
 	printf '\t"'$trackOrder'"\n'
@@ -1094,7 +1147,6 @@ do
 		# If the file don't belong to this template, we skip it
 		[[ "${fileTemplateMap[$file]}" = "$t" ]] || continue
 		generateJson $file >"json/${file}.json"
-		
 	done
 done
 
