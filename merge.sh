@@ -491,7 +491,7 @@ function generateJson() {
 		missingFonts=( $(printf '%s\n' "${missingFonts[@]}" | sort | uniq ) )
 		declare -a fontsToAdd
 		parseFontStore
-		if [[ "${!missingFonts[@]}" != "0" ]]
+		if [[ "${!missingFonts[@]}" != "" ]]
 		then
 			printf "$COLOR_WARNING">&2
 			echo "WARNING: The following fonts are missing: ${missingFonts[@]}">&2
@@ -1117,6 +1117,7 @@ done
 
 echo "Generating the jsons for mkvmerge"
 [[ -d "json" ]] || mkdir "json"
+rm json/*.json 2>/dev/null
 
 
 for t in "${!templates[@]}"
