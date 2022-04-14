@@ -1145,6 +1145,10 @@ do
 	IFS=$nl
 	for file in $(seq 0 $(($fileNb - 1)))
 	do
+		regex_match="${files[regex $file]}"
+		file_id="$file"
+
+		echo "Generating for $(eval "echo $DEFAULT_OUTPUT_NAME") ..."
 		# If the file don't belong to this template, we skip it
 		[[ "${fileTemplateMap[$file]}" = "$t" ]] || continue
 		generateJson $file >"json/${file}.json"
